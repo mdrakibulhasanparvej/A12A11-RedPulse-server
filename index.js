@@ -3,7 +3,7 @@ const app = express();
 const cors = require("cors");
 require("dotenv").config();
 const port = process.env.PORT || 8080;
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 // middleware
 app.use(cors());
@@ -49,20 +49,80 @@ async function run() {
       console.log("MongoDB connected successfully");
     });
 
-    app.get("/all-users", async (req, res) => {
-      const limit = Number(req.query.limit);
-      const skip = Number(req.query.skip);
+    // user get API with optional status filter
+    app.get("/users", async (req, res) => {
+      try {
+        const limit = Number(req.query.limit) || 10;
+        const skip = Number(req.query.skip) || 0;
+        const status = req.query.status; // "active" or "blocked"
 
-      const users = await usersCollection
-        .find()
-        .skip(skip)
-        .limit(limit)
-        .toArray();
+        // Build query object
+        const query = {};
+        if (status) query.status = status;
 
-      const totalUsers = await usersCollection.countDocuments();
+        const users = await usersCollection
+          .find(query)
+          .skip(skip)
+          .limit(limit)
+          .toArray();
 
-      res.send({ users, totalUsers });
+        const totalUsers = await usersCollection.countDocuments(query);
+
+        res.send({ users, totalUsers });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Failed to fetch users" });
+      }
     });
+
+    // user update aips
+    app.patch("/users/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const { role, status } = req.body; // ✅ accept role and status
+
+        const query = { _id: new ObjectId(id) };
+        const existingUser = await usersCollection.findOne(query);
+
+        if (!existingUser) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        const allowedRoles = ["donor", "admin", "volunteer"];
+        const allowedStatus = ["active", "blocked"];
+
+        const updateInfo = { $set: {} };
+
+        // Update role if valid and different
+        if (role && allowedRoles.includes(role) && role !== existingUser.role) {
+          updateInfo.$set.role = role;
+        }
+
+        // Update status if valid and different
+        if (
+          status &&
+          allowedStatus.includes(status) &&
+          status !== existingUser.status
+        ) {
+          updateInfo.$set.status = status;
+        }
+
+        // Always update timestamp if anything is changing
+        if (Object.keys(updateInfo.$set).length > 0) {
+          updateInfo.$set.updated_at = new Date();
+        } else {
+          return res.status(400).send({ message: "No valid changes provided" });
+        }
+
+        const result = await usersCollection.updateOne(query, updateInfo);
+        res.send(result);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Failed to update user" });
+      }
+    });
+
+    // last of main async function
   } catch (err) {
     console.error("MongoDB connection faild:", err);
   }

@@ -21,6 +21,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     await client.connect();
+    console.log("db connected");
     const db = client.db("RedPulse");
     const usersCollection = db.collection("users");
 
@@ -47,9 +48,19 @@ async function run() {
 
       console.log("MongoDB connected successfully");
     });
+
+    app.get("/all-users", async (req, res) => {
+      // try {
+      const users = await usersCollection.find().toArray();
+      res.send(users);
+      // } catch (error) {
+      //   res.status(500).send({ message: "Failed to fetch users" });
+      // }
+    });
   } catch (err) {
     console.error("MongoDB connection faild:", err);
   }
+  // users API
 }
 
 run().catch(console.dir);

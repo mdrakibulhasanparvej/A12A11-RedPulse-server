@@ -50,12 +50,18 @@ async function run() {
     });
 
     app.get("/all-users", async (req, res) => {
-      // try {
-      const users = await usersCollection.find().toArray();
-      res.send(users);
-      // } catch (error) {
-      //   res.status(500).send({ message: "Failed to fetch users" });
-      // }
+      const limit = Number(req.query.limit);
+      const skip = Number(req.query.skip);
+
+      const users = await usersCollection
+        .find()
+        .skip(skip)
+        .limit(limit)
+        .toArray();
+
+      const totalUsers = await usersCollection.countDocuments();
+
+      res.send({ users, totalUsers });
     });
   } catch (err) {
     console.error("MongoDB connection faild:", err);

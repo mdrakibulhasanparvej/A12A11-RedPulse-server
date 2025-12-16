@@ -75,6 +75,44 @@ async function run() {
       }
     });
 
+    // Get single user by email
+    app.get("/users/:email", async (req, res) => {
+      try {
+        const email = req.params.email;
+        const user = await usersCollection.findOne({ email });
+
+        if (!user) return res.status(404).send({ message: "User not found" });
+
+        res.send(user);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Failed to fetch user" });
+      }
+    });
+
+    // PATCH /users/:email
+    app.patch("/users/:email", async (req, res) => {
+      try {
+        const email = req.params.email;
+        const updateData = req.body;
+
+        const result = await usersCollection.findOneAndUpdate(
+          { email },
+          { $set: updateData },
+          { returnDocument: "after" }
+        );
+
+        if (!result.value) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        res.send(result.value);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Failed to update user" });
+      }
+    });
+
     // user update aips
     app.patch("/users/:id", async (req, res) => {
       try {

@@ -24,6 +24,7 @@ async function run() {
     console.log("db connected");
     const db = client.db("RedPulse");
     const usersCollection = db.collection("users");
+    const donationCollection = db.collection("donationRequests");
 
     // users related
     app.post("/users", async (req, res) => {
@@ -90,8 +91,8 @@ async function run() {
       }
     });
 
-    // PATCH /users/:email
-    app.patch("/users/:email", async (req, res) => {
+    // user-profile/:email - user profile update
+    app.patch("/user-profile/:email", async (req, res) => {
       try {
         const email = req.params.email;
         const updateData = req.body;
@@ -102,7 +103,9 @@ async function run() {
           { returnDocument: "after" }
         );
 
-        if (!result.value) {
+        // console.log(result);
+
+        if (!result) {
           return res.status(404).send({ message: "User not found" });
         }
 
@@ -157,6 +160,68 @@ async function run() {
       } catch (err) {
         console.error(err);
         res.status(500).send({ message: "Failed to update user" });
+      }
+    });
+
+    // donation related
+    app.post("/donation-requests", async (req, res) => {
+      try {
+        const donationRequest = req.body;
+
+        // Basic validation
+        const requiredFields = [
+          "requesterName",
+          "requesterEmail",
+          "recipientName",
+          "recipientDivision",
+          "recipientDistrict",
+          "recipientUpazila",
+          "recipientUnion",
+          "hospitalName",
+          "fullAddress",
+          "bloodGroup",
+          "donationDate",
+          "donationTime",
+          "requestMessage",
+        ];
+
+        for (let field of requiredFields) {
+          if (!donationRequest[field]) {
+            return res.status(400).send({ message: `${field} is required` });
+          }
+        }
+
+        // Set default status if not provided
+        if (!donationRequest.status) donationRequest.status = "pending";
+
+        const result = await donationCollection.insertOne(donationRequest);
+        res.status(201).send({ success: true, result });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({
+          success: false,
+          message: "Failed to create donation request",
+        });
+      }
+    });
+
+    // donation request get
+    app.get("/donation-requests/:email", async (req, res) => {
+      try {
+        const email = req.params.email;
+        const request = await donationCollection.findOne({
+          requesterEmail: email,
+        });
+
+        if (!request)
+          return res
+            .status(404)
+            .send({ message: "Donation request not found for this email" });
+
+        res.send(request);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Failed to fetch donation request" });
       }
     });
 

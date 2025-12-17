@@ -205,23 +205,95 @@ async function run() {
       }
     });
 
-    // donation request get
-    app.get("/donation-requests/:email", async (req, res) => {
+    // Get all donation requests
+    app.get("/donation-requests", async (req, res) => {
       try {
-        const email = req.params.email;
-        const request = await donationCollection.findOne({
-          requesterEmail: email,
-        });
+        const limit = Number(req.query.limit) || 20;
+        const skip = Number(req.query.skip) || 0;
+        const status = req.query.status; // optional filter
 
-        if (!request)
-          return res
-            .status(404)
-            .send({ message: "Donation request not found for this email" });
+        const query = {};
+        if (status) query.status = status;
 
-        res.send(request);
+        const requests = await donationCollection
+          .find(query)
+          .skip(skip)
+          .limit(limit)
+          .toArray();
+
+        const totalRequests = await donationCollection.countDocuments(query);
+
+        res.send({ requests, totalRequests });
       } catch (err) {
         console.error(err);
-        res.status(500).send({ message: "Failed to fetch donation request" });
+        res.status(500).send({ message: "Failed to fetch donation requests" });
+      }
+    });
+
+    // Update donation request status
+    app.patch("/donation-requests/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const { status } = req.body; // only allow status update
+
+        if (!["pending", "approved", "rejected"].includes(status)) {
+          return res.status(400).send({ message: "Invalid status" });
+        }
+
+        const result = await donationCollection.findOneAndUpdate(
+          { _id: new ObjectId(id) },
+          { $set: { status, updated_at: new Date() } },
+          { returnDocument: "after" }
+        );
+
+        if (!result.value)
+          return res
+            .status(404)
+            .send({ message: "Donation request not found" });
+
+        res.send(result.value);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Failed to update donation request" });
+      }
+    });
+
+    // Get a single donation request by ID
+    // app.get("/donation-requests/:id", async (req, res) => {
+    //   try {
+    //     const id = req.params.id;
+    //     const request = await donationCollection.findOne({
+    //       _id: new ObjectId(id),
+    //     });
+
+    //     if (!request)
+    //       return res
+    //         .status(404)
+    //         .send({ message: "Donation request not found" });
+
+    //     res.send(request);
+    //   } catch (err) {
+    //     console.error(err);
+    //     res.status(500).send({ message: "Failed to fetch donation request" });
+    //   }
+    // });
+
+    // get donation requests by email (latest 3)
+    app.get("/donation-requests", async (req, res) => {
+      try {
+        const email = req.query.email;
+        const limit = parseInt(req.query.limit) || 0;
+
+        const result = await donationCollection
+          .find({ requesterEmail: email })
+          .sort({ createdAt: -1 }) // latest first
+          .limit(limit)
+          .toArray();
+
+        res.send(result);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Failed to fetch donation requests" });
       }
     });
 

@@ -212,19 +212,94 @@ async function run() {
     });
 
     // Get all donation requests
-    app.get("/donation-requests", async (req, res) => {
+    // app.get("/donation-request-all/:id?", async (req, res) => {
+    //   try {
+    //     const id = req.params.id; // optional param
+    //     const email = req.query.email;
+    //     const status = req.query.status;
+    //     const skip = Number(req.query.skip) || 0;
+    //     const limit = Number(req.query.limit) || 20;
+
+    //     // Build query dynamically
+    //     const query = {};
+    //     if (id) query._id = new ObjectId(id);
+    //     if (email) query.requesterEmail = email;
+    //     if (status) query.status = status;
+
+    //     const requests = await donationCollection
+    //       .find(query)
+    //       .sort({ created_at: -1 }) // latest first
+    //       .skip(skip)
+    //       .limit(limit)
+    //       .toArray();
+
+    //     const totalRequests = await donationCollection.countDocuments(query);
+
+    //     res.send({ requests, totalRequests });
+    //   } catch (err) {
+    //     console.error(err);
+    //     res.status(500).send({ message: "Failed to fetch donation requests" });
+    //   }
+    // });
+    app.get("/donation-request-all", async (req, res) => {
       try {
-        const limit = Number(req.query.limit) || 20;
-        const skip = Number(req.query.skip) || 0;
-        const status = req.query.status; // optional filter
+        const {
+          id,
+          email,
+          status,
+          bloodGroup,
+          division,
+          district,
+          recipientName,
+          search,
+          skip = 0,
+          limit = 10,
+          sortBy = "created_at",
+          order = "desc",
+        } = req.query;
 
         const query = {};
+
+        if (id && ObjectId.isValid(id)) {
+          query._id = new ObjectId(id);
+        }
+
+        if (email) query.requesterEmail = email;
         if (status) query.status = status;
+        if (bloodGroup) query.bloodGroup = bloodGroup;
+        if (division) query.recipientDivision = division;
+        if (district) query.recipientDistrict = district;
+        if (recipientName) query.recipientName = recipientName;
+
+        if (search) {
+          query.$or = [
+            { recipientName: { $regex: search, $options: "i" } },
+            { hospitalName: { $regex: search, $options: "i" } },
+            { fullAddress: { $regex: search, $options: "i" } },
+          ];
+        }
+
+        const allowedSortFields = [
+          "created_at",
+          "donationDate",
+          "status",
+          "bloodGroup",
+        ];
+
+        const safeSortBy = allowedSortFields.includes(sortBy)
+          ? sortBy
+          : "created_at";
+
+        const sortOrder = order === "asc" ? 1 : -1;
+
+        const skipNum = Math.max(Number(skip) || 0, 0);
+        const limitNum = Math.min(Math.max(Number(limit) || 10, 1), 100);
 
         const requests = await donationCollection
           .find(query)
-          .skip(skip)
-          .limit(limit)
+          .sort({ [safeSortBy]: sortOrder })
+          .skip(skipNum)
+          .limit(limitNum)
           .toArray();
 
         const totalRequests = await donationCollection.countDocuments(query);
@@ -261,45 +336,6 @@ async function run() {
       } catch (err) {
         console.error(err);
         res.status(500).send({ message: "Failed to update donation request" });
-      }
-    });
-
-    // Get a single donation request by ID
-    // app.get("/donation-requests/:id", async (req, res) => {
-    //   try {
-    //     const id = req.params.id;
-    //     const request = await donationCollection.findOne({
-    //       _id: new ObjectId(id),
-    //     });
-
-    //     if (!request)
-    //       return res
-    //         .status(404)
-    //         .send({ message: "Donation request not found" });
-
-    //     res.send(request);
-    //   } catch (err) {
-    //     console.error(err);
-    //     res.status(500).send({ message: "Failed to fetch donation request" });
-    //   }
-    // });
-
-    // get donation requests by email (latest 3)
-    app.get("/donation-requests", async (req, res) => {
-      try {
-        const email = req.query.email;
-        const limit = parseInt(req.query.limit) || 0;
-
-        const result = await donationCollection
-          .find({ requesterEmail: email })
-          .sort({ created_at: -1 }) // latest first
-          .limit(limit)
-          .toArray();
-
-        res.send(result);
-      } catch (err) {
-        console.error(err);
-        res.status(500).send({ message: "Failed to fetch donation requests" });
       }
     });
 

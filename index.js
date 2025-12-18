@@ -29,7 +29,10 @@ async function run() {
     // users related
     app.post("/users", async (req, res) => {
       const user = req.body;
-      console.log(user);
+      const newUser = {
+        ...user,
+        created_at: new Date(),
+      };
       const email = user.email;
 
       if (!email) {
@@ -44,7 +47,7 @@ async function run() {
         });
       }
 
-      const result = await usersCollection.insertOne(user);
+      const result = await usersCollection.insertOne(newUser);
       res.status(201).send(result);
 
       console.log("MongoDB connected successfully");
@@ -286,7 +289,7 @@ async function run() {
 
         const result = await donationCollection
           .find({ requesterEmail: email })
-          .sort({ createdAt: -1 }) // latest first
+          .sort({ created_at: -1 }) // latest first
           .limit(limit)
           .toArray();
 

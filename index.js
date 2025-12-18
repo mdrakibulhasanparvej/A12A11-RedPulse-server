@@ -170,7 +170,7 @@ async function run() {
       try {
         const donationRequest = req.body;
 
-        // Basic validation
+        // Validate required fields
         const requiredFields = [
           "requesterName",
           "requesterEmail",
@@ -193,10 +193,14 @@ async function run() {
           }
         }
 
-        // Set default status if not provided
-        if (!donationRequest.status) donationRequest.status = "pending";
+        // Add backend timestamps
+        const donation = {
+          ...donationRequest,
+          status: donationRequest.status || "pending",
+          created_at: new Date(),
+        };
 
-        const result = await donationCollection.insertOne(donationRequest);
+        const result = await donationCollection.insertOne(donation);
         res.status(201).send({ success: true, result });
       } catch (err) {
         console.error(err);

@@ -49,8 +49,6 @@ async function run() {
 
       const result = await usersCollection.insertOne(newUser);
       res.status(201).send(result);
-
-      console.log("MongoDB connected successfully");
     });
 
     // user get API with optional status filter
@@ -98,15 +96,16 @@ async function run() {
     app.patch("/user-profile/:email", async (req, res) => {
       try {
         const email = req.params.email;
-        const updateData = req.body;
+        const updateData = {
+          ...req.body,
+          updated_at: new Date(),
+        };
 
         const result = await usersCollection.findOneAndUpdate(
           { email },
           { $set: updateData },
           { returnDocument: "after" }
         );
-
-        // console.log(result);
 
         if (!result) {
           return res.status(404).send({ message: "User not found" });
@@ -123,7 +122,7 @@ async function run() {
     app.patch("/users/:id", async (req, res) => {
       try {
         const id = req.params.id;
-        const { role, status } = req.body; // ✅ accept role and status
+        const { role, status } = req.body; // accept role and status
 
         const query = { _id: new ObjectId(id) };
         const existingUser = await usersCollection.findOne(query);

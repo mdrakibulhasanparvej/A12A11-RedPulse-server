@@ -273,9 +273,11 @@ async function run() {
 
         if (search) {
           query.$or = [
-            { recipientName: { $regex: search, $options: "i" } },
-            { hospitalName: { $regex: search, $options: "i" } },
-            { fullAddress: { $regex: search, $options: "i" } },
+            { recipientDistrict: { $regex: search, $options: "i" } },
+            { recipientUpazila: { $regex: search, $options: "i" } },
+            {
+              bloodGroup: { $regex: search, $options: "i" },
+            },
           ];
         }
 

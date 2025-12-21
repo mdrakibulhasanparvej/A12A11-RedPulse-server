@@ -25,6 +25,7 @@ async function run() {
     const db = client.db("RedPulse");
     const usersCollection = db.collection("users");
     const donationCollection = db.collection("donationRequests");
+    const donationFundCollection = db.collection("donationPaymentInfo");
 
     // ================ users related ========================
     app.post("/users", async (req, res) => {
@@ -436,6 +437,11 @@ async function run() {
           payment_method_types: ["card"],
           mode: "payment",
           customer_email: email,
+          metadata: {
+            name: name, //  customer name from frontend
+            email: email, //  customer name from frontend
+            amount: amount,
+          },
           line_items: [
             {
               price_data: {
@@ -449,7 +455,7 @@ async function run() {
               quantity: 1,
             },
           ],
-          success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success`,
+          success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cenceled`,
         });
 
@@ -457,6 +463,47 @@ async function run() {
       } catch (error) {
         console.error(error);
         res.status(500).send({ message: "Payment session failed" });
+      }
+    });
+
+    // POST /api/donation/confirm
+    app.post("/donation-payment-info", async (req, res) => {
+      try {
+        const { sessionId } = req.body;
+
+        if (!sessionId)
+          return res.status(400).send({ message: "No session_id provided" });
+
+        // Fetch the session from Stripe
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+        // console.log(session);
+
+        if (session.payment_status !== "paid") {
+          return res.status(400).send({ message: "Payment not completed" });
+        }
+
+        // Prepare donation document
+        const donationData = {
+          name: session.metadata?.name || "donor name",
+          payment_holder: session.customer_details?.name || "card holder name",
+          email: session.customer_details?.email || "donor email",
+          amount: session.amount_total / 100, // from cents
+          transition_id: session.payment_intent,
+          payment_method_types: session.payment_method_types,
+          created_at: new Date(),
+          status: "paid",
+        };
+
+        // console.log(donationData);
+
+        // Insert into MongoDB
+        const resutl = await donationFundCollection.insertOne(donationData);
+
+        res.send({ success: true, donation: donationData });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Failed to confirm donation" });
       }
     });
 

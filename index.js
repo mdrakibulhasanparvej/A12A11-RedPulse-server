@@ -4,6 +4,7 @@ const cors = require("cors");
 require("dotenv").config();
 const port = process.env.PORT || 8080;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const stripe = require("stripe")(process.env.STRIPE_SECTET);
 
 // middleware
 app.use(cors());
@@ -53,7 +54,7 @@ async function run() {
     // user get API with optional status filter
     app.get("/users", async (req, res) => {
       try {
-        const limit = Number(req.query.limit) || 10;
+        const limit = Number(req.query.limit) || 1000;
         const skip = Number(req.query.skip) || 0;
         const status = req.query.status; // "active" or "blocked"
 
@@ -423,6 +424,39 @@ async function run() {
           message: "Server error",
           error: error.message,
         });
+      }
+    });
+
+    // ======================== payment related api ==========================
+    app.post("/create-checkout-session", async (req, res) => {
+      try {
+        const { amount, email, name } = req.body;
+
+        const session = await stripe.checkout.sessions.create({
+          payment_method_types: ["card"],
+          mode: "payment",
+          customer_email: email,
+          line_items: [
+            {
+              price_data: {
+                currency: "bdt",
+                product_data: {
+                  name: "Blood Donation Funding",
+                  description: `Donation by ${name}`,
+                },
+                unit_amount: amount * 100, // Stripe uses cents
+              },
+              quantity: 1,
+            },
+          ],
+          success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success`,
+          cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cenceled`,
+        });
+
+        res.send({ url: session.url });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Payment session failed" });
       }
     });
 

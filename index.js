@@ -21,12 +21,11 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     await client.connect();
-    console.log("db connected");
     const db = client.db("RedPulse");
     const usersCollection = db.collection("users");
     const donationCollection = db.collection("donationRequests");
 
-    // users related
+    // ================ users related ========================
     app.post("/users", async (req, res) => {
       const user = req.body;
       const newUser = {
@@ -165,7 +164,34 @@ async function run() {
       }
     });
 
-    // donation related
+    // user delete
+    app.delete("/user/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+
+        const result = await usersCollection.findOneAndDelete({
+          _id: new ObjectId(id),
+        });
+
+        if (!result) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        res.send({
+          success: true,
+          message: "User deleted successfully",
+          data: result.value,
+        });
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: "Server error",
+          error: error.message,
+        });
+      }
+    });
+
+    // ====================== donation related ========================
     app.post("/donation-requests", async (req, res) => {
       try {
         const donationRequest = req.body;
@@ -252,8 +278,8 @@ async function run() {
           district,
           recipientName,
           search,
-          skip = 0,
-          limit = 10,
+          skip,
+          limit,
           sortBy = "created_at",
           order = "desc",
         } = req.query;
@@ -294,8 +320,8 @@ async function run() {
 
         const sortOrder = order === "asc" ? 1 : -1;
 
-        const skipNum = Math.max(Number(skip) || 0, 0);
-        const limitNum = Math.min(Math.max(Number(limit) || 10, 1), 100);
+        const skipNum = Math.max(Number(skip));
+        const limitNum = Math.min(Math.max(Number(limit)));
 
         const requests = await donationCollection
           .find(query)
@@ -313,31 +339,90 @@ async function run() {
       }
     });
 
-    // Update donation request status
-    app.patch("/donation-requests/:id", async (req, res) => {
+    // Update donation request status && doner info && create request full update
+    app.patch("/donation-request-all/:id", async (req, res) => {
       try {
         const id = req.params.id;
-        const { status } = req.body; // only allow status update
+        const { status, donorName, donorEmail, ...rest } = req.body;
 
-        if (!["pending", "approved", "rejected"].includes(status)) {
-          return res.status(400).send({ message: "Invalid status" });
-        }
+        // 1️⃣ Find existing request
+        const existing = await donationCollection.findOne({
+          _id: new ObjectId(id),
+        });
 
-        const result = await donationCollection.findOneAndUpdate(
-          { _id: new ObjectId(id) },
-          { $set: { status, updated_at: new Date() } },
-          { returnDocument: "after" }
-        );
-
-        if (!result.value)
+        if (!existing) {
           return res
             .status(404)
             .send({ message: "Donation request not found" });
+        }
+
+        // 2️⃣ Block updates if status is final (done/cancel)
+        if (existing.status === "done" || existing.status === "cancel") {
+          return res.status(403).send({
+            message: "Cannot update request once it is done or cancelled",
+          });
+        }
+
+        // 3️⃣ Prepare updateDoc
+        const updateDoc = { ...rest, updated_at: new Date() };
+
+        // 4️⃣ Validate status if provided
+        if (status) {
+          if (!["pending", "inprogress", "done", "cancel"].includes(status)) {
+            return res.status(400).send({ message: "Invalid status" });
+          }
+          updateDoc.status = status;
+        }
+
+        // 5️⃣ Include donor info if provided
+        if (donorName) updateDoc.donorName = donorName;
+        if (donorEmail) updateDoc.donorEmail = donorEmail;
+
+        // 6️⃣ Clean undefined fields (optional but safe)
+        Object.keys(updateDoc).forEach((key) => {
+          if (updateDoc[key] === undefined) delete updateDoc[key];
+        });
+
+        // 7️⃣ Perform update
+        const result = await donationCollection.findOneAndUpdate(
+          { _id: new ObjectId(id) },
+          { $set: updateDoc },
+          { returnDocument: "after" }
+        );
 
         res.send(result.value);
       } catch (err) {
-        console.error(err);
+        console.error("PATCH error:", err);
         res.status(500).send({ message: "Failed to update donation request" });
+      }
+    });
+
+    // delete donation requested
+    app.delete("/donation-request-all/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+
+        const result = await donationCollection.findOneAndDelete({
+          _id: new ObjectId(id),
+        });
+
+        if (!result) {
+          return res
+            .status(404)
+            .send({ message: "Donation request not found" });
+        }
+
+        res.send({
+          success: true,
+          message: "Donation request deleted successfully",
+          data: result.value,
+        });
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: "Server error",
+          error: error.message,
+        });
       }
     });
 

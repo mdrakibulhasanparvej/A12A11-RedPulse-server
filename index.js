@@ -471,34 +471,46 @@ async function run() {
       try {
         const { sessionId } = req.body;
 
-        if (!sessionId)
+        if (!sessionId) {
           return res.status(400).send({ message: "No session_id provided" });
+        }
 
-        // Fetch the session from Stripe
+        // 🔹 Retrieve session from Stripe
         const session = await stripe.checkout.sessions.retrieve(sessionId);
-
-        // console.log(session);
 
         if (session.payment_status !== "paid") {
           return res.status(400).send({ message: "Payment not completed" });
         }
 
-        // Prepare donation document
+        const paymentIntentId = session.payment_intent;
+
+        // 🔹 1. Check if already exists
+        const existingPayment = await donationFundCollection.findOne({
+          transition_id: paymentIntentId,
+        });
+
+        if (existingPayment) {
+          return res.send({
+            success: true,
+            message: "Payment already recorded",
+            donation: existingPayment,
+          });
+        }
+
+        // 🔹 2. Prepare donation document
         const donationData = {
           name: session.metadata?.name || "donor name",
           payment_holder: session.customer_details?.name || "card holder name",
           email: session.customer_details?.email || "donor email",
-          amount: session.amount_total / 100, // from cents
-          transition_id: session.payment_intent,
+          amount: session.amount_total / 100,
+          transition_id: paymentIntentId,
           payment_method_types: session.payment_method_types,
           created_at: new Date(),
           status: "paid",
         };
 
-        // console.log(donationData);
-
-        // Insert into MongoDB
-        const resutl = await donationFundCollection.insertOne(donationData);
+        // 🔹 3. Insert once
+        await donationFundCollection.insertOne(donationData);
 
         res.send({ success: true, donation: donationData });
       } catch (error) {
@@ -510,17 +522,23 @@ async function run() {
     // GET /donation-payment-info
     app.get("/donation-payment-info", async (req, res) => {
       try {
-        const skip = Number(req.query.skip) || 0;
-        const limit = Number(req.query.limit) || 10;
+        const { skip, limit, email } = req.query;
+
+        const query = {};
+
+        // Donor-wise filter
+        if (email) {
+          query.email = email;
+        }
 
         const donations = await donationFundCollection
-          .find({})
+          .find(query)
           .sort({ created_at: -1 })
-          .skip(skip)
-          .limit(limit)
+          .skip(Number(skip))
+          .limit(Number(limit))
           .toArray();
 
-        const totalPayment = await donationFundCollection.countDocuments({});
+        const totalPayment = await donationFundCollection.countDocuments();
 
         res.send({
           success: true,

@@ -10,7 +10,39 @@ const stripe = require("stripe")(process.env.STRIPE_SECTET);
 app.use(cors());
 app.use(express.json());
 
+// firebase admin-SDK
+const admin = require("firebase-admin");
+const serviceAccount = require("./redpulses-firebase-adminsdk.json");
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
+// Verify Firebase ID Token
+const verifyFBToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    return res.status(401).send({ message: "Unauthorized: No token provided" });
+  }
+
+  const idToken = authHeader.split(" ")[1]; // Bearer TOKEN
+
+  // console.log("Firebase Token received:", idToken);
+
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    // console.log(decodedToken);
+    req.decoded_email = decodedToken.email; // store decoded user info
+    // console.log(req.decoded_email);
+    next();
+  } catch (error) {
+    console.error("Firebase token verification failed:", error);
+    return res.status(401).send({ message: "Unauthorized: Invalid token" });
+  }
+};
+
 const uri = process.env.DB_URI;
+
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -27,6 +59,16 @@ async function run() {
     const donationCollection = db.collection("donationRequests");
     const donationFundCollection = db.collection("donationPaymentInfo");
 
+    // Admin-only verification
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded_email; // from verifyFBToken
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+      if (!user || user.role !== "admin") {
+        return res.status(403).send({ message: "Forbidden: Admins only" });
+      }
+      next();
+    };
     // ================ users related ========================
     app.post("/users", async (req, res) => {
       const user = req.body;
@@ -53,7 +95,7 @@ async function run() {
     });
 
     // user get API with optional status filter
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyFBToken, async (req, res) => {
       try {
         const limit = Number(req.query.limit) || 1000;
         const skip = Number(req.query.skip) || 0;
@@ -79,7 +121,7 @@ async function run() {
     });
 
     // Get single user by email
-    app.get("/users/:email", async (req, res) => {
+    app.get("/users/:email", verifyFBToken, async (req, res) => {
       try {
         const email = req.params.email;
         const user = await usersCollection.findOne({ email });
@@ -94,7 +136,7 @@ async function run() {
     });
 
     // user-profile/:email - user profile update
-    app.patch("/user-profile/:email", async (req, res) => {
+    app.patch("/user-profile/:email", verifyFBToken, async (req, res) => {
       try {
         const email = req.params.email;
         const updateData = {
@@ -119,8 +161,8 @@ async function run() {
       }
     });
 
-    // user update aips
-    app.patch("/users/:id", async (req, res) => {
+    // user update aips (role basis)
+    app.patch("/users/:id", verifyFBToken, verifyAdmin, async (req, res) => {
       try {
         const id = req.params.id;
         const { role, status } = req.body; // accept role and status
@@ -167,7 +209,7 @@ async function run() {
     });
 
     // user delete
-    app.delete("/user/:id", async (req, res) => {
+    app.delete("/user/:id", verifyFBToken, verifyAdmin, async (req, res) => {
       try {
         const id = req.params.id;
 
@@ -194,7 +236,7 @@ async function run() {
     });
 
     // ====================== donation related ========================
-    app.post("/donation-requests", async (req, res) => {
+    app.post("/donation-requests", verifyFBToken, async (req, res) => {
       try {
         const donationRequest = req.body;
 
@@ -342,7 +384,7 @@ async function run() {
     });
 
     // Update donation request status && doner info && create request full update
-    app.patch("/donation-request-all/:id", async (req, res) => {
+    app.patch("/donation-request-all/:id", verifyFBToken, async (req, res) => {
       try {
         const id = req.params.id;
         const { status, donorName, donorEmail, ...rest } = req.body;
@@ -400,7 +442,7 @@ async function run() {
     });
 
     // delete donation requested
-    app.delete("/donation-request-all/:id", async (req, res) => {
+    app.delete("/donation-request-all/:id", verifyFBToken, async (req, res) => {
       try {
         const id = req.params.id;
 
@@ -467,7 +509,7 @@ async function run() {
     });
 
     // POST /api/donation/confirm
-    app.post("/donation-payment-info", async (req, res) => {
+    app.post("/donation-payment-info", verifyFBToken, async (req, res) => {
       try {
         const { sessionId } = req.body;
 
@@ -520,7 +562,7 @@ async function run() {
     });
 
     // GET /donation-payment-info
-    app.get("/donation-payment-info", async (req, res) => {
+    app.get("/donation-payment-info", verifyFBToken, async (req, res) => {
       try {
         const { skip, limit, email } = req.query;
 
@@ -552,21 +594,26 @@ async function run() {
     });
 
     // DELETE /donation-payment-info/:id
-    app.delete("/donation-payment-info/:id", async (req, res) => {
-      try {
-        const id = new ObjectId(req.params.id);
-        const result = await donationFundCollection.deleteOne({ _id: id });
+    app.delete(
+      "/donation-payment-info/:id",
+      verifyFBToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const id = new ObjectId(req.params.id);
+          const result = await donationFundCollection.deleteOne({ _id: id });
 
-        if (result.deletedCount === 0) {
-          return res.status(404).send({ message: "Payment not found" });
+          if (result.deletedCount === 0) {
+            return res.status(404).send({ message: "Payment not found" });
+          }
+
+          res.send({ success: true });
+        } catch (error) {
+          console.error(error);
+          res.status(500).send({ message: "Failed to delete payment" });
         }
-
-        res.send({ success: true });
-      } catch (error) {
-        console.error(error);
-        res.status(500).send({ message: "Failed to delete payment" });
       }
-    });
+    );
 
     // last of main async function
   } catch (err) {

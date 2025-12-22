@@ -507,6 +507,49 @@ async function run() {
       }
     });
 
+    // GET /donation-payment-info
+    app.get("/donation-payment-info", async (req, res) => {
+      try {
+        const skip = Number(req.query.skip) || 0;
+        const limit = Number(req.query.limit) || 10;
+
+        const donations = await donationFundCollection
+          .find({})
+          .sort({ created_at: -1 })
+          .skip(skip)
+          .limit(limit)
+          .toArray();
+
+        const totalPayment = await donationFundCollection.countDocuments({});
+
+        res.send({
+          success: true,
+          donations,
+          totalPayment,
+        });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Failed to fetch donations" });
+      }
+    });
+
+    // DELETE /donation-payment-info/:id
+    app.delete("/donation-payment-info/:id", async (req, res) => {
+      try {
+        const id = new ObjectId(req.params.id);
+        const result = await donationFundCollection.deleteOne({ _id: id });
+
+        if (result.deletedCount === 0) {
+          return res.status(404).send({ message: "Payment not found" });
+        }
+
+        res.send({ success: true });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Failed to delete payment" });
+      }
+    });
+
     // last of main async function
   } catch (err) {
     console.error("MongoDB connection faild:", err);

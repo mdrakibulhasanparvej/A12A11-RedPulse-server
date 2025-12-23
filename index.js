@@ -32,7 +32,7 @@ const verifyFBToken = async (req, res, next) => {
 
   const idToken = authHeader.split(" ")[1]; // Bearer TOKEN
 
-  // console.log("Firebase Token received:", idToken);
+  console.log("Firebase Token received:", idToken);
 
   try {
     const decodedToken = await admin.auth().verifyIdToken(idToken);
